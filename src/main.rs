@@ -1,5 +1,8 @@
+extern crate chrono;
+
 use std::env;
-use std::io::Error;
+use std::fs::OpenOptions;
+use std::io::{Error, Write};
 use std::os::unix::process::ExitStatusExt;
 use std::process::{Command, ExitStatus, Stdio, Child};
 
@@ -7,13 +10,15 @@ use rush::builtins::builtins;
 use rush::input::*;
 use rush::output::println_err;
 use rush::rush::Rush;
+use rush::utils::get_histfile_path;
 
 fn main() {
   let greeting = "Welcome to RUSH.......";
   println!("{}", greeting);
 
   loop {
-    match launch(Rush::from(read_line(build_prompt()))) {
+    let input = read_line(build_prompt());
+    match launch(Rush::from(input.clone())) {
       Ok(status) => {
         if let Some(code) = status.code() {
           env::set_var("STATUS", code.to_string())
@@ -24,6 +29,7 @@ fn main() {
         println_err("Command not found".to_owned())
       }
     }
+    save_history(input);
   }
 }
 
@@ -79,4 +85,16 @@ fn spawn(cmd: &String, args: &Vec<String>, stdin: Stdio, stdout: Stdio) -> Resul
       .spawn()
 }
 
+fn save_history(cmd: String) {
+  let timestamp = chrono::Local::now().format("%s").to_string();
 
+  match cmd.as_str() {
+    "" => (),
+    _ => {
+      let mut file = OpenOptions::new()
+        .create(true).append(true)
+        .open(get_histfile_path()).unwrap();
+      file.write((timestamp + ";" + cmd.as_str() + "\n").as_bytes()).unwrap();
+    }
+  }
+}
