@@ -1,8 +1,8 @@
 use nom::{
   branch::alt,
-  bytes::complete::{escaped, take_while, take_while1},
+  bytes::complete::{escaped, take_while, take_while1, escaped_transform, tag},
   character::complete::{alphanumeric1 as alphanumeric, char, one_of, space1},
-  combinator::{cut, map},
+  combinator::{cut, map, verify},
   error::{context, ErrorKind, ParseError},
   IResult,
   sequence::{preceded, terminated},
@@ -13,7 +13,7 @@ pub enum Token<'a> {
   Var(&'a str),
   Literal(&'a str),
   Substitution(&'a str, Vec<Token<'a>>),
-  Word(&'a str), // Need to think of some other name
+  Word(std::string::String), // Need to think of some other name
   Pipe,
 }
 
@@ -41,13 +41,59 @@ fn var<'a, E: ParseError<&'a str>>(
   )(i)
 }
 
+fn _recognise_escaped_space<'a, E: ParseError<&'a str>>(
+  i: &'a str,
+) -> nom::IResult<&'a str, &'a str, E> {
+  preceded(nom::character::complete::char('\\'), sp)(i)
+}
+
+fn escaped_space<'a, E: ParseError<&'a str>>(
+  i: &'a str
+) -> nom::IResult<&'a str, &'a str, E> {
+  nom::combinator::recognize(tag(" "))(i)
+}
+
+fn escaped_tab<'a, E: ParseError<&'a str>>(
+  i: &'a str
+) -> nom::IResult<&'a str, &'a str, E> {
+  nom::combinator::value("  ", tag("t"))(i)
+}
+
+fn escaped_backslash<'a, E: ParseError<&'a str>>(
+  i: &'a str
+) -> nom::IResult<&'a str, &'a str, E> {
+  nom::combinator::recognize(nom::character::complete::char('\\'))(i)
+}
+
+fn _alphanum<'a, E: ParseError<&'a str>>(
+  i: &'a str,
+) -> nom::IResult<&'a str, &'a str, E> {
+  take_while1(is_valid_var_char)(i)
+}
+
+// fn word<'a, E: ParseError<&'a str>>(
+//   i: &'a str,
+// ) -> IResult<&'a str, Token<'a>, E> {
+//   context(
+//     "word",
+//     map(
+//       alt((alphanum, recognise_escaped_space)),
+//       Token::Word,
+//     ),
+//   )(i)
+// }
+
 fn word<'a, E: ParseError<&'a str>>(
   i: &'a str,
 ) -> IResult<&'a str, Token<'a>, E> {
   context(
     "word",
     map(
-      take_while1(is_valid_var_char),
+      // verify(escaped(alphanum, '\\', char('a')), |s: &str| s != ""),
+      // escaped(alphanum, '\\', char('a')),
+      verify(
+        escaped_transform(alphanumeric, '\\', alt((escaped_space, escaped_tab, escaped_backslash))),
+         |s: &str| s != ""),
       Token::Word,
     ),
   )(i)
@@ -133,9 +179,9 @@ pub mod tests {
   }
 
   #[test]
-  fn should_parse_multiple_words() {
-    let actual = parse(r#""hello""#);
-    let expected: Vec<Token> = vec![Literal("hello")];
+  fn should_parse_multiple_strings() {
+    let actual = parse(r#""hello" "world""#);
+    let expected: Vec<Token> = vec![Literal("hello"), Literal("world")];
     assert_eq!(actual, expected)
   }
 
@@ -149,35 +195,49 @@ pub mod tests {
    #[test]
    fn should_parse_word_with_string() {
      let actual = parse(r#"echo "hello world""#);
-     let expected: Vec<Token> = vec![Word("echo"), Literal("hello world")];
+     let expected: Vec<Token> = vec![Word("echo".to_string()), Literal("hello world")];
+     assert_eq!(expected, actual)
+   }
+
+   #[test]
+   fn should_parse_word_with_pipe() {
+     let actual = parse("echo hello | cat");
+     let expected: Vec<Token> = vec![Word("echo".to_string()), Word("hello".to_string()), Pipe, Word("cat".to_string())];
      assert_eq!(expected, actual)
    }
 
    #[test]
    fn should_parse_word_with_string_and_pipe() {
      let actual = parse(r#"ls | grep "catch me if you can""#);
-     let expected: Vec<Token> = vec![Word("ls"), Pipe, Word("grep"), Literal("catch me if you can")];
+     let expected: Vec<Token> = vec![Word("ls".to_string()), Pipe, Word("grep".to_string()), Literal("catch me if you can")];
      assert_eq!(expected, actual)
    }
-  //
-  //  #[test]
-  //  fn should_parse_word_with_escaped_space_string() {
-  //    let actual = parse("echo hello\\ world".to_owned());
-  //    let expected: Vec<Token> = vec![Value(String::from("echo")), Value(String::from("hello world"))];
-  //    assert_eq!(expected, actual)
-  //  }
-  //
-  //  #[test]
-  //  fn should_parse_word_joined_strings() {
-  //    let actual = parse("echo \"hello\"\"world\"".to_owned());
-  //    let expected: Vec<Token> = vec![Value(String::from("echo")), Values(vec![String::from("hello"), String::from("world")])];
-  //    assert_eq!(expected, actual)
-  //  }
-  //
-  //  #[test]
-  //  fn should_parse_with_pipe() {
-  //    let actual = parse("echo hello | cat".to_owned());
-  //    let expected: Vec<Token> = vec![Value(String::from("echo")), Value(String::from("hello")), Pipe, Value(String::from("cat"))];
-  //    assert_eq!(expected, actual)
-  //  }
+
+   #[test]
+   fn should_parse_word_with_escaped_space_string() {
+     let actual = parse("echo hello\\ world ");
+     let expected: Vec<Token> = vec![Word("echo".to_string()), Word("hello world".to_string())];
+     assert_eq!(expected, actual)
+   }
+
+   #[test]
+   fn should_parse_word_with_escaped_tab_string() {
+     let actual = parse("echo hello\\tworld ");
+     let expected: Vec<Token> = vec![Word("echo".to_string()), Word("hello  world".to_string())];
+     assert_eq!(expected, actual)
+   }
+
+   #[test]
+   fn should_parse_word_with_escaped_slash_string() {
+     let actual = parse("echo hello\\\\world");
+     let expected: Vec<Token> = vec![Word("echo".to_string()), Word("hello\\world".to_string())];
+     assert_eq!(expected, actual)
+   }
+
+   #[test]
+   fn should_parse_word_joined_strings() {
+     let actual = parse("echo \"hello\"\"world\"");
+     let expected: Vec<Token> = vec![Word("echo".to_string()), Literal("hello"), Literal("world")];
+     assert_eq!(expected, actual)
+   }
 }
