@@ -10,15 +10,15 @@ use termion::raw::{IntoRawMode, RawTerminal};
 const DEFAULT_TERM_SIZE: (u16, u16) = (80, 80);
 
 struct InputContext {
-  s:           RawTerminal<Stdout>,
-  left:        String,
-  right:       VecDeque<u8>,
-  prompt:      String,
-  cursor:      u16,
-  cursor_pos:  (u16, u16),
+  s: RawTerminal<Stdout>,
+  left: String,
+  right: VecDeque<u8>,
+  prompt: String,
+  cursor: u16,
+  cursor_pos: (u16, u16),
   cursor_edit: (u16, u16),
-  term_size:   (u16, u16),
-  rows:        u16,
+  term_size: (u16, u16),
+  rows: u16,
 }
 
 impl InputContext {
